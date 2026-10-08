@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>MiniMax Tic-Tac-Toe</title>
+  <meta name="description" content="Tic-Tac-Toe gegen eine Minimax-KI">
+  <meta name="theme-color" content="#1e293b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="MiniMax">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <style>
+    :root {
+      --bg: #0f172a; --panel: #1e293b; --cell: #334155; --text: #e2e8f0; --muted: #94a3b8;
+      --x: #38bdf8; --o: #f472b6; --win: #facc15; --good: #4ade80; --bad: #f87171;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0; min-height: 100dvh; background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex; flex-direction: column; align-items: center;
+      padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+      user-select: none;
+    }
+    h1 { margin: 4px 0 12px; font-size: 1.5rem; letter-spacing: .02em; }
+    h1 span { color: var(--x); }
+    .status { min-height: 1.6em; font-size: 1.15rem; margin-bottom: 12px; text-align: center; }
+    .board {
+      width: min(92vw, 420px); aspect-ratio: 1; display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr));
+      gap: 8px; padding: 8px;
+      background: var(--panel); border-radius: 16px;
+    }
+    .cell {
+      position: relative; border: 0; border-radius: 12px; background: var(--cell);
+      color: var(--text); font-size: clamp(3rem, 18vw, 6rem); font-weight: 800;
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      transition: background .15s, transform .1s;
+    }
+    .cell:active:not(:disabled) { transform: scale(.96); }
+    .cell:disabled { cursor: default; }
+    .cell.X { color: var(--x); }
+    .cell.O { color: var(--o); }
+    .cell.win { background: #475569; color: var(--win); }
+    .cell .score {
+      position: absolute; bottom: 6px; right: 8px; font-size: .9rem; font-weight: 600;
+    }
+    .score.pos { color: var(--good); } .score.neg { color: var(--bad); } .score.zero { color: var(--muted); }
+    .controls { width: min(92vw, 420px); margin-top: 16px; display: grid; gap: 10px; }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+    label { color: var(--muted); font-size: .85rem; display: block; margin-bottom: 4px; }
+    select, button.btn {
+      width: 100%; padding: 12px; border-radius: 10px; border: 0; font-size: 1rem;
+      background: var(--panel); color: var(--text);
+    }
+    button.btn.primary { background: var(--x); color: #0f172a; font-weight: 700; }
+    .toggle { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; }
+    .toggle input { width: 20px; height: 20px; }
+    .stats { display: flex; justify-content: space-around; color: var(--muted); font-size: .9rem; }
+    .stats b { color: var(--text); font-size: 1.1rem; }
+    #install { display: none; }
+    .hint { color: var(--muted); font-size: .8rem; text-align: center; max-width: 420px; }
+  </style>
+</head>
+<body>
+  <h1><span>Mini</span>Max Tic-Tac-Toe</h1>
+  <div class="status" id="status" aria-live="polite"></div>
+  <div class="board" id="board"></div>
+
+  <div class="controls">
+    <div class="row">
+      <div>
+        <label for="level">KI-Stärke</label>
+        <select id="level">
+          <option value="leicht">Leicht</option>
+          <option value="mittel">Mittel</option>
+          <option value="unbesiegbar" selected>Unbesiegbar</option>
+        </select>
+      </div>
+      <div>
+        <label for="mode">Modus</label>
+        <select id="mode">
+          <option value="ki">Gegen KI</option>
+          <option value="2p">2 Spieler</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="newX">Neu: ich starte (X)</button>
+      <button class="btn" id="newO">Neu: KI startet</button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="showScores"> Minimax-Bewertungen anzeigen (aus Sicht des Spielers am Zug)</label>
+    <div class="stats">
+      <div>Siege <b id="sWin">0</b></div>
+      <div>Remis <b id="sDraw">0</b></div>
+      <div>Niederlagen <b id="sLoss">0</b></div>
+    </div>
+    <button class="btn" id="install">📲 App installieren</button>
+    <p class="hint" id="iosHint" hidden>iPhone: Teilen-Symbol antippen → „Zum Home-Bildschirm“.</p>
+  </div>
+
+  <script src="minimax.js"></script>
+  <script>
+    const T = window.TicTacToe;
+    const $ = (id) => document.getElementById(id);
+    const boardEl = $('board');
+    const cells = [];
+    for (let i = 0; i < 9; i++) {
+      const b = document.createElement('button');
+      b.className = 'cell';
+      b.setAttribute('aria-label', 'Feld ' + (i + 1));
+      b.addEventListener('click', () => humanMove(i));
+      boardEl.appendChild(b);
+      cells.push(b);
+    }
+
+    const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+    const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+    let stats = load('mm-stats', { win: 0, draw: 0, loss: 0 });
+    $('level').value = load('mm-level', 'unbesiegbar');
+    $('mode').value = load('mm-mode', 'ki');
+    $('showScores').checked = load('mm-scores', false);
+
+    let board, turn, human, over, thinking;
+
+    function newGame(humanStarts) {
+      board = Array(9).fill(null);
+      turn = 'X';
+      human = humanStarts ? 'X' : 'O';
+      over = false;
+      render();
+      if (isAiTurn()) aiMove();
+    }
+
+    const isAiTurn = () => $('mode').value === 'ki' && turn !== human && !over;
+
+    function humanMove(i) {
+      if (over || board[i] || thinking || isAiTurn()) return;
+      play(i);
+      if (isAiTurn()) aiMove();
+    }
+
+    function aiMove() {
+      thinking = true;
+      render();
+      setTimeout(() => {
+        play(T.chooseMove(board, turn, $('level').value));
+        thinking = false;
+        render();
+      }, 350);
+    }
+
+    function play(i) {
+      board[i] = turn;
+      if (navigator.vibrate) navigator.vibrate(15);
+      const w = T.winner(board);
+      if (w || T.isFull(board)) {
+        over = true;
+        if ($('mode').value === 'ki') {
+          if (!w) stats.draw++; else if (w.player === human) stats.win++; else stats.loss++;
+          save('mm-stats', stats);
+        }
+      } else {
+        turn = T.other(turn);
+      }
+      render();
+    }
+
+    function render() {
+      const w = T.winner(board);
+      const scores = $('showScores').checked && !over ? T.scoreMoves(board, turn) : null;
+      cells.forEach((c, i) => {
+        c.textContent = board[i] || '';
+        c.className = 'cell' + (board[i] ? ' ' + board[i] : '') + (w && w.line.includes(i) ? ' win' : '');
+        c.disabled = over || !!board[i] || thinking || isAiTurn();
+        if (scores && scores[i] !== null) {
+          const s = document.createElement('span');
+          const v = scores[i];
+          s.className = 'score ' + (v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero');
+          s.textContent = (v > 0 ? '+' : '') + v;
+          c.appendChild(s);
+        }
+      });
+      const vsAi = $('mode').value === 'ki';
+      let msg;
+      if (w) msg = vsAi ? (w.player === human ? '🎉 Du hast gewonnen!' : '🤖 Die KI hat gewonnen.') : `🎉 ${w.player} hat gewonnen!`;
+      else if (over) msg = '🤝 Unentschieden';
+      else if (thinking) msg = '🤖 KI denkt nach …';
+      else msg = vsAi ? `Du bist ${human} – Du bist dran` : `${turn} ist am Zug`;
+      $('status').textContent = msg;
+      $('sWin').textContent = stats.win;
+      $('sDraw').textContent = stats.draw;
+      $('sLoss').textContent = stats.loss;
+    }
+
+    $('newX').onclick = () => newGame(true);
+    $('newO').onclick = () => newGame(false);
+    $('level').onchange = () => save('mm-level', $('level').value);
+    $('mode').onchange = () => { save('mm-mode', $('mode').value); newGame(true); };
+    $('showScores').onchange = () => { save('mm-scores', $('showScores').checked); render(); };
+
+    // Installation als App
+    let installPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      installPrompt = e;
+      $('install').style.display = 'block';
+    });
+    $('install').onclick = async () => {
+      if (!installPrompt) return;
+      installPrompt.prompt();
+      await installPrompt.userChoice;
+      installPrompt = null;
+      $('install').style.display = 'none';
+    };
+    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !standalone) $('iosHint').hidden = false;
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+    newGame(true);
+  </script>
+</body>
+</html>
